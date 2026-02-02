@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/config/env.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../articles/providers/article_providers.dart';
+import '../providers/settings_providers.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final settingsAsync = ref.watch(settingsProvider);
+
     return Scaffold(
       body: CustomScrollView(
         slivers: [
@@ -21,54 +27,114 @@ class SettingsScreen extends ConsumerWidget {
               const SizedBox(height: 8),
 
               // Digest Settings Section
-              _SectionHeader(title: 'Daily Digest'),
-              _SettingsTile(
-                icon: Icons.schedule_outlined,
-                title: 'Digest Time',
-                subtitle: '8:00 AM',
-                onTap: () {
-                  // TODO: Time picker
-                },
-              ),
-              _SettingsTile(
-                icon: Icons.notifications_outlined,
-                title: 'Push Notifications',
-                subtitle: 'Get notified when your daily digest is ready',
-                trailing: Switch(
-                  value: true,
-                  onChanged: (value) {
-                    // TODO: Toggle notifications
+              const _SectionHeader(title: 'Daily Digest'),
+              settingsAsync.when(
+                data: (settings) => _SettingsTile(
+                  icon: Icons.schedule_outlined,
+                  title: 'Digest Time',
+                  subtitle: settings.digestTime.format(context),
+                  onTap: () async {
+                    final time = await showTimePicker(
+                      context: context,
+                      initialTime: settings.digestTime,
+                    );
+                    if (time != null) {
+                      ref.read(settingsProvider.notifier).updateDigestTime(time);
+                    }
                   },
+                ),
+                loading: () => _SettingsTile(
+                  icon: Icons.schedule_outlined,
+                  title: 'Digest Time',
+                  subtitle: 'Loading...',
+                ),
+                error: (_, __) => _SettingsTile(
+                  icon: Icons.schedule_outlined,
+                  title: 'Digest Time',
+                  subtitle: '8:00 AM',
+                ),
+              ),
+              settingsAsync.when(
+                data: (settings) => _SettingsTile(
+                  icon: Icons.notifications_outlined,
+                  title: 'Push Notifications',
+                  subtitle: 'Get notified when your daily digest is ready',
+                  trailing: Switch(
+                    value: settings.pushNotifications,
+                    onChanged: (value) {
+                      ref.read(settingsProvider.notifier).togglePushNotifications(value);
+                    },
+                  ),
+                ),
+                loading: () => _SettingsTile(
+                  icon: Icons.notifications_outlined,
+                  title: 'Push Notifications',
+                  subtitle: 'Get notified when your daily digest is ready',
+                  trailing: const Switch(value: true, onChanged: null),
+                ),
+                error: (_, __) => _SettingsTile(
+                  icon: Icons.notifications_outlined,
+                  title: 'Push Notifications',
+                  subtitle: 'Get notified when your daily digest is ready',
+                  trailing: const Switch(value: true, onChanged: null),
                 ),
               ),
 
               // Content Settings Section
-              _SectionHeader(title: 'Content'),
-              _SettingsTile(
-                icon: Icons.image_outlined,
-                title: 'Analyze Images',
-                subtitle: 'Use AI to describe and analyze images in articles',
-                trailing: Switch(
-                  value: true,
-                  onChanged: (value) {
-                    // TODO: Toggle image analysis
-                  },
+              const _SectionHeader(title: 'Content'),
+              settingsAsync.when(
+                data: (settings) => _SettingsTile(
+                  icon: Icons.image_outlined,
+                  title: 'Analyze Images',
+                  subtitle: 'Use AI to describe and analyze images in articles',
+                  trailing: Switch(
+                    value: settings.analyzeImages,
+                    onChanged: (value) {
+                      ref.read(settingsProvider.notifier).toggleAnalyzeImages(value);
+                    },
+                  ),
+                ),
+                loading: () => _SettingsTile(
+                  icon: Icons.image_outlined,
+                  title: 'Analyze Images',
+                  subtitle: 'Use AI to describe and analyze images in articles',
+                  trailing: const Switch(value: true, onChanged: null),
+                ),
+                error: (_, __) => _SettingsTile(
+                  icon: Icons.image_outlined,
+                  title: 'Analyze Images',
+                  subtitle: 'Use AI to describe and analyze images in articles',
+                  trailing: const Switch(value: true, onChanged: null),
                 ),
               ),
-              _SettingsTile(
-                icon: Icons.comment_outlined,
-                title: 'Include Comments',
-                subtitle: 'Extract and summarize discussion threads',
-                trailing: Switch(
-                  value: true,
-                  onChanged: (value) {
-                    // TODO: Toggle comments
-                  },
+              settingsAsync.when(
+                data: (settings) => _SettingsTile(
+                  icon: Icons.comment_outlined,
+                  title: 'Include Comments',
+                  subtitle: 'Extract and summarize discussion threads',
+                  trailing: Switch(
+                    value: settings.includeComments,
+                    onChanged: (value) {
+                      ref.read(settingsProvider.notifier).toggleIncludeComments(value);
+                    },
+                  ),
+                ),
+                loading: () => _SettingsTile(
+                  icon: Icons.comment_outlined,
+                  title: 'Include Comments',
+                  subtitle: 'Extract and summarize discussion threads',
+                  trailing: const Switch(value: true, onChanged: null),
+                ),
+                error: (_, __) => _SettingsTile(
+                  icon: Icons.comment_outlined,
+                  title: 'Include Comments',
+                  subtitle: 'Extract and summarize discussion threads',
+                  trailing: const Switch(value: true, onChanged: null),
                 ),
               ),
 
               // Account Section
-              _SectionHeader(title: 'Account'),
+              const _SectionHeader(title: 'Account'),
               _SettingsTile(
                 icon: Icons.person_outline,
                 title: 'Sign In',
@@ -84,21 +150,30 @@ class SettingsScreen extends ConsumerWidget {
               ),
 
               // Data Section
-              _SectionHeader(title: 'Data'),
+              const _SectionHeader(title: 'Data'),
               _SettingsTile(
                 icon: Icons.archive_outlined,
                 title: 'Archived Articles',
                 subtitle: 'View your archived items',
-                onTap: () {
-                  // TODO: Archive view
-                },
+                onTap: () => context.push('/archive'),
               ),
               _SettingsTile(
                 icon: Icons.download_outlined,
                 title: 'Export Data',
                 subtitle: 'Download all your articles and digests',
-                onTap: () {
-                  // TODO: Export
+                onTap: () async {
+                  try {
+                    await ref.read(dataServiceProvider).exportAndShare();
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Export failed: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
                 },
               ),
               _SettingsTile(
@@ -112,8 +187,8 @@ class SettingsScreen extends ConsumerWidget {
               ),
 
               // About Section
-              _SectionHeader(title: 'About'),
-              _SettingsTile(
+              const _SectionHeader(title: 'About'),
+              const _SettingsTile(
                 icon: Icons.info_outline,
                 title: 'Version',
                 subtitle: '1.0.0',
@@ -121,16 +196,12 @@ class SettingsScreen extends ConsumerWidget {
               _SettingsTile(
                 icon: Icons.description_outlined,
                 title: 'Privacy Policy',
-                onTap: () {
-                  // TODO: Open privacy policy
-                },
+                onTap: () => launchUrl(Uri.parse(Env.privacyPolicyUrl)),
               ),
               _SettingsTile(
                 icon: Icons.article_outlined,
                 title: 'Terms of Service',
-                onTap: () {
-                  // TODO: Open terms
-                },
+                onTap: () => launchUrl(Uri.parse(Env.termsOfServiceUrl)),
               ),
 
               const SizedBox(height: 32),
@@ -148,7 +219,7 @@ class SettingsScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Made with ❤️',
+                      'Made with love',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: context.mutedTextColor,
                           ),
@@ -179,9 +250,30 @@ class SettingsScreen extends ConsumerWidget {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
-              // TODO: Clear all data
+            onPressed: () async {
               Navigator.pop(context);
+              try {
+                await ref.read(dataServiceProvider).clearAllData();
+                ref.invalidate(articlesStreamProvider);
+                ref.invalidate(digestsStreamProvider);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('All data cleared'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to clear data: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Delete Everything'),

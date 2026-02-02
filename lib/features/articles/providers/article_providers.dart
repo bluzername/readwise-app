@@ -15,8 +15,20 @@ class ArticleService {
 
   ArticleService(this._supabase);
 
-  Future<Article> saveArticle({required String url}) {
-    return _supabase.saveArticle(url);
+  Future<Article> saveArticle({
+    required String url,
+    String? preExtractedContent,
+    String? preExtractedTitle,
+    String? preExtractedImage,
+    String? preExtractedAuthor,
+  }) {
+    return _supabase.saveArticle(
+      url,
+      preExtractedContent: preExtractedContent,
+      preExtractedTitle: preExtractedTitle,
+      preExtractedImage: preExtractedImage,
+      preExtractedAuthor: preExtractedAuthor,
+    );
   }
 
   Future<void> markAsRead(String id) => _supabase.markAsRead(id);

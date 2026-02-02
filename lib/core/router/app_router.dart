@@ -5,6 +5,8 @@ import '../../features/home/screens/home_screen.dart';
 import '../../features/articles/screens/article_detail_screen.dart';
 import '../../features/digest/screens/digest_screen.dart';
 import '../../features/settings/screens/settings_screen.dart';
+import '../../features/settings/screens/archive_screen.dart';
+import '../../features/auth/screens/web_login_screen.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/',
@@ -40,6 +42,19 @@ final appRouter = GoRouter(
       name: 'article',
       builder: (context, state) => ArticleDetailScreen(
         articleId: state.pathParameters['id']!,
+      ),
+    ),
+    GoRoute(
+      path: '/archive',
+      name: 'archive',
+      builder: (context, state) => const ArchiveScreen(),
+    ),
+    GoRoute(
+      path: '/auth/:provider',
+      name: 'auth',
+      builder: (context, state) => WebLoginScreen(
+        provider: state.pathParameters['provider']!,
+        returnUrl: state.uri.queryParameters['returnUrl'],
       ),
     ),
   ],

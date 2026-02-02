@@ -1,4 +1,4 @@
-name: readwise
+name: readzero
 description: Intelligent reading list with daily AI summaries
 publish_to: 'none'
 version: 1.0.0+1
@@ -23,6 +23,10 @@ dependencies:
   # Local Storage
   shared_preferences: ^2.2.2
   path_provider: ^2.1.2
+  flutter_secure_storage: ^9.0.0
+
+  # WebView for authenticated extraction
+  webview_flutter: ^4.4.2
   
   # Networking
   dio: ^5.4.0
@@ -37,11 +41,14 @@ dependencies:
   # Share Extension Support
   receive_sharing_intent: ^1.6.7
   
-  # Notifications
-  firebase_core: ^2.25.4
-  firebase_messaging: ^14.7.15
+  # Notifications (Firebase temporarily disabled for Xcode 26 compatibility)
+  # firebase_core: ^2.25.4
+  # firebase_messaging: ^14.7.15
   flutter_local_notifications: ^16.3.2
   
+  # Sharing
+  share_plus: ^7.2.2
+
   # Utils
   url_launcher: ^6.2.4
   html: ^0.15.4
@@ -56,20 +63,17 @@ dev_dependencies:
   riverpod_generator: ^2.3.9
   build_runner: ^2.4.8
   json_serializable: ^6.7.1
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  ios: true
+  android: false
+  image_path: "assets/icon/app_icon.png"
+  remove_alpha_ios: true
 
 flutter:
   uses-material-design: true
-  
+
   assets:
     - assets/images/
-  
-  fonts:
-    - family: Inter
-      fonts:
-        - asset: assets/fonts/Inter-Regular.ttf
-        - asset: assets/fonts/Inter-Medium.ttf
-          weight: 500
-        - asset: assets/fonts/Inter-SemiBold.ttf
-          weight: 600
-        - asset: assets/fonts/Inter-Bold.ttf
-          weight: 700
+    - assets/icon/

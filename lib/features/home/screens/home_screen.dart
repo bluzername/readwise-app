@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:timeago/timeago.dart' as timeago;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 
@@ -202,188 +202,440 @@ class _DateSection extends StatelessWidget {
   }
 }
 
-class _ArticleCard extends ConsumerWidget {
+/// Discover-style article card - clean, minimal, Perplexity-inspired
+class _ArticleCard extends ConsumerStatefulWidget {
   final Article article;
 
   const _ArticleCard({required this.article});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ArticleCard> createState() => _ArticleCardState();
+}
+
+class _ArticleCardState extends ConsumerState<_ArticleCard> {
+  bool _isPressed = false;
+
+  void _showContextMenu(Article article) {
+    final parentContext = context; // Store valid context from widget
+    HapticFeedback.mediumImpact();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.grey[700] : Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            if (article.title != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                child: Text(
+                  article.title!,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.copy),
+              title: const Text('Copy Link'),
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: article.url));
+                Navigator.pop(sheetContext);
+                ScaffoldMessenger.of(parentContext).showSnackBar(
+                  const SnackBar(content: Text('Link copied'), duration: Duration(seconds: 1)),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.article_outlined),
+              title: const Text('Copy Summary'),
+              onTap: () {
+                final title = article.title ?? article.url;
+                final keyPoints = article.analysis?.keyPoints ?? [];
+                String textToCopy;
+                if (keyPoints.isNotEmpty) {
+                  final summary = keyPoints.map((p) => '• $p').join('\n');
+                  textToCopy = '$title\n\n$summary';
+                } else {
+                  textToCopy = '$title\n\n${article.url}';
+                }
+                Clipboard.setData(ClipboardData(text: textToCopy));
+                Navigator.pop(sheetContext);
+                ScaffoldMessenger.of(parentContext).showSnackBar(
+                  SnackBar(
+                    content: Text(keyPoints.isNotEmpty ? 'Summary copied' : 'Title & link copied'),
+                    duration: const Duration(seconds: 1),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.archive_outlined),
+              title: const Text('Archive'),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                await ref.read(articleServiceProvider).archive(article.id);
+                ref.invalidate(articlesStreamProvider);
+                if (parentContext.mounted) {
+                  ScaffoldMessenger.of(parentContext).showSnackBar(
+                    const SnackBar(content: Text('Archived'), duration: Duration(seconds: 1)),
+                  );
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title: const Text('Delete', style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _confirmDelete(parentContext, article);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmDelete(BuildContext parentContext, Article article) {
+    showDialog(
+      context: parentContext,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete article?'),
+        content: const Text('This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              // Delete immediately and invalidate cache for instant UI update
+              await ref.read(articleServiceProvider).delete(article.id);
+              ref.invalidate(articlesStreamProvider);
+              if (parentContext.mounted) {
+                ScaffoldMessenger.of(parentContext).showSnackBar(
+                  const SnackBar(content: Text('Deleted'), duration: Duration(seconds: 1)),
+                );
+              }
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final article = widget.article;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isProcessing = article.status == ArticleStatus.pending ||
         article.status == ArticleStatus.extracting ||
         article.status == ArticleStatus.analyzing;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: Card(
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: isProcessing
-              ? null
-              : () => context.push('/article/${article.id}'),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Image
-              if (article.imageUrl != null)
-                AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: isProcessing
-                      ? Shimmer.fromColors(
-                          baseColor: context.isDark
-                              ? Colors.grey[800]!
-                              : Colors.grey[300]!,
-                          highlightColor: context.isDark
-                              ? Colors.grey[700]!
-                              : Colors.grey[100]!,
-                          child: Container(color: Colors.white),
-                        )
-                      : CachedNetworkImage(
-                          imageUrl: article.imageUrl!,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) => Container(
-                            color: context.borderColor,
-                          ),
-                          errorWidget: (_, __, ___) => Container(
-                            color: context.borderColor,
-                            child: Icon(
-                              Icons.image_outlined,
-                              color: context.mutedTextColor,
-                            ),
-                          ),
-                        ),
-                ),
-
-              // Content
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Site name & time
-                    Row(
-                      children: [
-                        if (article.siteName != null) ...[
-                          Text(
-                            article.siteName!,
-                            style: Theme.of(context).textTheme.labelSmall,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '•',
-                            style: TextStyle(color: context.mutedTextColor),
-                          ),
-                          const SizedBox(width: 8),
-                        ],
-                        Text(
-                          timeago.format(article.createdAt),
-                          style: Theme.of(context).textTheme.labelSmall,
-                        ),
-                        const Spacer(),
-                        if (isProcessing)
-                          SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: context.primaryColor,
-                            ),
-                          )
-                        else if (article.readAt == null)
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: context.primaryColor,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-
-                    // Title
-                    if (isProcessing)
-                      Shimmer.fromColors(
-                        baseColor: context.isDark
-                            ? Colors.grey[800]!
-                            : Colors.grey[300]!,
-                        highlightColor: context.isDark
-                            ? Colors.grey[700]!
-                            : Colors.grey[100]!,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              height: 20,
-                              width: double.infinity,
-                              color: Colors.white,
-                            ),
-                            const SizedBox(height: 8),
-                            Container(
-                              height: 20,
-                              width: 200,
-                              color: Colors.white,
-                            ),
-                          ],
-                        ),
-                      )
-                    else
-                      Text(
-                        article.title ?? _extractDomain(article.url),
-                        style: Theme.of(context).textTheme.titleLarge,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-
-                    // Summary preview
-                    if (!isProcessing && article.analysis?.summary != null) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        article.analysis!.summary,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: context.mutedTextColor,
-                            ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-
-                    // Topics
-                    if (!isProcessing &&
-                        article.analysis?.topics.isNotEmpty == true) ...[
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: article.analysis!.topics
-                            .take(3)
-                            .map((topic) => Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color:
-                                        context.primaryColor.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    topic,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: context.primaryColor,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ))
-                            .toList(),
-                      ),
-                    ],
-                  ],
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _isPressed = true),
+        onTapUp: (_) {
+          setState(() => _isPressed = false);
+          if (!isProcessing) {
+            HapticFeedback.lightImpact();
+            context.push('/article/${article.id}');
+          }
+        },
+        onTapCancel: () => setState(() => _isPressed = false),
+        onLongPress: () {
+          setState(() => _isPressed = false);
+          _showContextMenu(article);
+        },
+        child: AnimatedScale(
+          scale: _isPressed ? 0.98 : 1.0,
+          duration: const Duration(milliseconds: 100),
+          child: AnimatedOpacity(
+            opacity: _isPressed ? 0.9 : 1.0,
+            duration: const Duration(milliseconds: 100),
+            child: Container(
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: isDark
+                      ? const Color(0xFF2C2C2E)
+                      : const Color(0xFFE5E7EB),
+                  width: 1,
                 ),
               ),
-            ],
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Hero image
+                  if (article.imageUrl != null)
+                    AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: isProcessing
+                          ? Shimmer.fromColors(
+                              baseColor: isDark
+                                  ? Colors.grey[800]!
+                                  : Colors.grey[300]!,
+                              highlightColor: isDark
+                                  ? Colors.grey[700]!
+                                  : Colors.grey[100]!,
+                              child: Container(color: Colors.white),
+                            )
+                          : CachedNetworkImage(
+                              imageUrl: article.imageUrl!,
+                              fit: BoxFit.cover,
+                              placeholder: (_, __) => Container(
+                                color: isDark
+                                    ? const Color(0xFF2C2C2E)
+                                    : const Color(0xFFF3F4F6),
+                              ),
+                              errorWidget: (_, __, ___) => Container(
+                                color: isDark
+                                    ? const Color(0xFF2C2C2E)
+                                    : const Color(0xFFF3F4F6),
+                                child: Icon(
+                                  Icons.article_outlined,
+                                  color: isDark
+                                      ? const Color(0xFF6B7280)
+                                      : const Color(0xFF9CA3AF),
+                                  size: 32,
+                                ),
+                              ),
+                            ),
+                    ),
+
+                  // Content
+                  Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Metadata row: source + time
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                article.siteName ?? _extractDomain(article.url),
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark
+                                      ? const Color(0xFF9CA3AF)
+                                      : const Color(0xFF6B7280),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              _formatRelativeTime(article.createdAt),
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w400,
+                                color: isDark
+                                    ? const Color(0xFF6B7280)
+                                    : const Color(0xFF9CA3AF),
+                              ),
+                            ),
+                            if (isProcessing) ...[
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: context.primaryColor,
+                                ),
+                              ),
+                            ] else if (article.readAt == null) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: context.primaryColor,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+
+                        const SizedBox(height: 10),
+
+                        // Title
+                        if (isProcessing)
+                          Shimmer.fromColors(
+                            baseColor: isDark
+                                ? Colors.grey[800]!
+                                : Colors.grey[300]!,
+                            highlightColor: isDark
+                                ? Colors.grey[700]!
+                                : Colors.grey[100]!,
+                            child: Container(
+                              height: 20,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                          )
+                        else
+                          Text(
+                            article.title ?? _extractDomain(article.url),
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                              height: 1.3,
+                              color: isDark
+                                  ? const Color(0xFFF5F5F5)
+                                  : const Color(0xFF1A1A1A),
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+
+                        // Key points as bullet summary (with graceful fallback)
+                        if (!isProcessing) ...[
+                          const SizedBox(height: 10),
+                          if (article.analysis?.keyPoints.isNotEmpty == true)
+                            ...article.analysis!.keyPoints.take(3).map((point) =>
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 6),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 7),
+                                        child: Container(
+                                          width: 4,
+                                          height: 1.5,
+                                          color: isDark
+                                              ? const Color(0xFF6B7280)
+                                              : const Color(0xFF9CA3AF),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          // Strip the label prefix for cleaner display
+                                          _stripBulletLabel(point),
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w400,
+                                            height: 1.45,
+                                            color: isDark
+                                                ? const Color(0xFFD1D5DB)
+                                                : const Color(0xFF4B5563),
+                                          ),
+                                          maxLines: 4,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ))
+                          else if (article.status == ArticleStatus.failed)
+                            // Failed extraction - show error state
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.error_outline,
+                                  size: 16,
+                                  color: isDark
+                                      ? const Color(0xFFEF4444)
+                                      : const Color(0xFFDC2626),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Extraction failed - tap to open in browser',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w400,
+                                      height: 1.4,
+                                      color: isDark
+                                          ? const Color(0xFF9CA3AF)
+                                          : const Color(0xFF6B7280),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            )
+                          else if (article.description != null && article.description!.isNotEmpty)
+                            // Has description but no key points - show description
+                            Text(
+                              article.description!,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w400,
+                                height: 1.4,
+                                color: isDark
+                                    ? const Color(0xFFD1D5DB)
+                                    : const Color(0xFF4B5563),
+                              ),
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                            )
+                          else
+                            // No content at all - show tap to view
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.open_in_new,
+                                  size: 16,
+                                  color: isDark
+                                      ? const Color(0xFF6B7280)
+                                      : const Color(0xFF9CA3AF),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Tap to open article',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w400,
+                                      height: 1.4,
+                                      color: isDark
+                                          ? const Color(0xFF9CA3AF)
+                                          : const Color(0xFF6B7280),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -396,6 +648,37 @@ class _ArticleCard extends ConsumerWidget {
       return uri.host.replaceFirst('www.', '');
     } catch (_) {
       return url;
+    }
+  }
+
+  /// Strips the CLAIM:/SIGNIFICANCE:/TAKEAWAY: prefix from bullet points
+  /// for cleaner display while keeping the insight content
+  String _stripBulletLabel(String point) {
+    final prefixes = ['CLAIM:', 'SIGNIFICANCE:', 'TAKEAWAY:'];
+    for (final prefix in prefixes) {
+      if (point.toUpperCase().startsWith(prefix)) {
+        return point.substring(prefix.length).trim();
+      }
+    }
+    return point;
+  }
+
+  String _formatRelativeTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+
+    if (difference.inMinutes < 1) {
+      return 'now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h';
+    } else if (difference.inDays == 1) {
+      return '1d';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays}d';
+    } else {
+      return DateFormat.MMMd().format(dateTime);
     }
   }
 }

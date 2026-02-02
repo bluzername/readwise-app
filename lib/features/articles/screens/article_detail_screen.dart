@@ -9,6 +9,17 @@ import 'package:intl/intl.dart';
 import '../../../core/models/models.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../articles/providers/article_providers.dart';
+import '../widgets/discover_card.dart';
+
+/// Extract domain from URL for display
+String _extractDomain(String url) {
+  try {
+    final uri = Uri.parse(url);
+    return uri.host.replaceFirst('www.', '');
+  } catch (_) {
+    return url;
+  }
+}
 
 class ArticleDetailScreen extends ConsumerStatefulWidget {
   final String articleId;
@@ -263,27 +274,38 @@ class _ArticleDetailScreenState extends ConsumerState<ArticleDetailScreen> {
 
                   const SizedBox(height: 24),
 
-                  // AI Summary Card
-                  if (article.analysis != null) ...[
-                    _AISummaryCard(
-                      analysis: article.analysis!,
-                      isExpanded: _showSummary,
-                      onToggle: () => setState(() => _showSummary = !_showSummary),
-                    ),
+                  // Fallback UI for failed/empty articles
+                  if (_isArticleEmpty(article)) ...[
+                    _buildEmptyArticleFallback(context, article),
                     const SizedBox(height: 24),
                   ],
 
-                  // Main content
-                  if (article.content != null)
-                    MarkdownBody(
-                      data: article.content!,
-                      styleSheet: _markdownStyle(context),
-                      onTapLink: (text, href, title) {
-                        if (href != null) {
-                          launchUrl(Uri.parse(href));
-                        }
-                      },
+                  // AI Summary Card - Key Points (3 bullets)
+                  if (article.analysis != null && !_isArticleEmpty(article)) ...[
+                    _buildSummarySection(
+                      context,
+                      title: 'Key Takeaways',
+                      icon: Icons.lightbulb_outline,
+                      bullets: article.analysis!.keyPoints,
                     ),
+                    const SizedBox(height: 20),
+
+                    // Detailed Summary (5-10 bullets) if available
+                    if (article.analysis!.detailedPoints.isNotEmpty) ...[
+                      _buildSummarySection(
+                        context,
+                        title: 'Deeper Dive',
+                        icon: Icons.menu_book_outlined,
+                        bullets: article.analysis!.detailedPoints,
+                        isExpanded: false,
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+
+                    // Source link
+                    _buildSourceLink(context, article),
+                    const SizedBox(height: 24),
+                  ],
 
                   // Image analyses
                   if (article.analysis?.imageAnalyses.isNotEmpty == true) ...[
@@ -308,6 +330,223 @@ class _ArticleDetailScreenState extends ConsumerState<ArticleDetailScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Check if article has failed extraction or has no meaningful content
+  bool _isArticleEmpty(Article article) {
+    // Only show fallback for explicitly failed articles
+    if (article.status == ArticleStatus.failed) return true;
+
+    // If status is ready but we have no content AND no analysis, extraction failed silently
+    if (article.status == ArticleStatus.ready &&
+        article.content == null &&
+        article.analysis == null) return true;
+
+    return false;
+  }
+
+  /// Build fallback UI for empty/failed articles
+  Widget _buildEmptyArticleFallback(BuildContext context, Article article) {
+    final isTwitter = article.url.contains('twitter.com') || article.url.contains('x.com');
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: context.isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF5F5F5),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: context.borderColor,
+          width: 1,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isTwitter ? Icons.lock_outline : Icons.article_outlined,
+            size: 48,
+            color: context.mutedTextColor,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            isTwitter
+                ? 'X/Twitter requires login to view'
+                : 'Content could not be extracted',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            isTwitter
+                ? 'This post is behind a login wall. Tap below to open it in your browser or X app.'
+                : 'This article couldn\'t be extracted automatically. Tap below to view it in your browser.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: context.mutedTextColor,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          // Show description if available
+          if (article.description != null && article.description!.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: context.primaryColor.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                article.description!,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontStyle: FontStyle.italic,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => launchUrl(
+                Uri.parse(article.url),
+                mode: LaunchMode.externalApplication,
+              ),
+              icon: const Icon(Icons.open_in_browser),
+              label: Text(isTwitter ? 'Open in X / Browser' : 'Open in Browser'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: context.primaryColor,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummarySection(
+    BuildContext context, {
+    required String title,
+    required IconData icon,
+    required List<String> bullets,
+    bool isExpanded = true,
+  }) {
+    return StatefulBuilder(
+      builder: (context, setState) {
+        final showAll = isExpanded;
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: context.isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF8F9FA),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: context.borderColor,
+              width: 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                children: [
+                  Icon(icon, size: 18, color: context.primaryColor),
+                  const SizedBox(width: 8),
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // Bullets
+              ...bullets.map((bullet) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Container(
+                        width: 4,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: context.mutedTextColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        bullet,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSourceLink(BuildContext context, Article article) {
+    return InkWell(
+      onTap: () => launchUrl(Uri.parse(article.url)),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            Icon(
+              Icons.link,
+              size: 18,
+              color: context.primaryColor,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Source: ',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: context.mutedTextColor,
+              ),
+            ),
+            Expanded(
+              child: Text(
+                _extractDomain(article.url),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: context.primaryColor,
+                  decoration: TextDecoration.underline,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Icon(
+              Icons.open_in_new,
+              size: 16,
+              color: context.primaryColor,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -370,150 +609,6 @@ class _ArticleDetailScreenState extends ConsumerState<ArticleDetailScreen> {
       codeblockPadding: const EdgeInsets.all(16),
       a: TextStyle(color: context.primaryColor),
       listBullet: Theme.of(context).textTheme.bodyLarge,
-    );
-  }
-}
-
-class _AISummaryCard extends StatelessWidget {
-  final ArticleAnalysis analysis;
-  final bool isExpanded;
-  final VoidCallback onToggle;
-
-  const _AISummaryCard({
-    required this.analysis,
-    required this.isExpanded,
-    required this.onToggle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Column(
-        children: [
-          // Header
-          InkWell(
-            onTap: onToggle,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: context.primaryColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      Icons.auto_awesome,
-                      size: 20,
-                      color: context.primaryColor,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'AI Summary',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        Text(
-                          'Powered by Claude',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    isExpanded ? Icons.expand_less : Icons.expand_more,
-                    color: context.mutedTextColor,
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // Content
-          if (isExpanded) ...[
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Summary
-                  Text(
-                    analysis.summary,
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-
-                  // Key points
-                  if (analysis.keyPoints.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      'Key Points',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                    const SizedBox(height: 8),
-                    ...analysis.keyPoints.map((point) => Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                margin: const EdgeInsets.only(top: 8),
-                                width: 6,
-                                height: 6,
-                                decoration: BoxDecoration(
-                                  color: context.primaryColor,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  point,
-                                  style: Theme.of(context).textTheme.bodyMedium,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )),
-                  ],
-
-                  // Topics
-                  if (analysis.topics.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: analysis.topics
-                          .map((topic) => Chip(
-                                label: Text(
-                                  topic,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: context.primaryColor,
-                                  ),
-                                ),
-                                backgroundColor: context.primaryColor.withOpacity(0.1),
-                                side: BorderSide.none,
-                                padding: EdgeInsets.zero,
-                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ))
-                          .toList(),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
     );
   }
 }

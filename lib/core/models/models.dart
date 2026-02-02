@@ -1,4 +1,4 @@
-import 'dart:convert';
+import 'package:flutter/material.dart';
 
 /// Represents a saved article/webpage
 class Article {
@@ -208,20 +208,26 @@ class Comment {
 /// AI-generated analysis of the article
 class ArticleAnalysis {
   final String summary;
-  final List<String> keyPoints;
+  final String? tldr; // One-sentence essence
+  final List<String> keyPoints; // 3 bullet executive summary
+  final List<String> detailedPoints; // 5-10 bullet deeper dive
   final List<String> topics;
   final String? sentiment;
   final int? readingTimeMinutes;
+  final String? contentType; // news, opinion, tutorial, etc.
   final double? relevanceScore; // How relevant to user's interests
   final String? commentsSummary; // Summary of discussion if comments exist
   final List<ImageAnalysis> imageAnalyses;
 
   ArticleAnalysis({
     required this.summary,
+    this.tldr,
     required this.keyPoints,
+    this.detailedPoints = const [],
     required this.topics,
     this.sentiment,
     this.readingTimeMinutes,
+    this.contentType,
     this.relevanceScore,
     this.commentsSummary,
     this.imageAnalyses = const [],
@@ -229,14 +235,23 @@ class ArticleAnalysis {
 
   factory ArticleAnalysis.fromJson(Map<String, dynamic> json) =>
       ArticleAnalysis(
-        summary: json['summary'] as String,
-        keyPoints: (json['key_points'] as List<dynamic>)
-            .map((e) => e as String)
-            .toList(),
-        topics:
-            (json['topics'] as List<dynamic>).map((e) => e as String).toList(),
+        summary: json['summary'] as String? ?? 'Summary unavailable',
+        tldr: json['tldr'] as String?,
+        keyPoints: (json['key_points'] as List<dynamic>?)
+                ?.map((e) => e as String)
+                .toList() ??
+            [],
+        detailedPoints: (json['detailed_points'] as List<dynamic>?)
+                ?.map((e) => e as String)
+                .toList() ??
+            [],
+        topics: (json['topics'] as List<dynamic>?)
+                ?.map((e) => e as String)
+                .toList() ??
+            [],
         sentiment: json['sentiment'] as String?,
         readingTimeMinutes: json['reading_time_minutes'] as int?,
+        contentType: json['content_type'] as String?,
         relevanceScore: (json['relevance_score'] as num?)?.toDouble(),
         commentsSummary: json['comments_summary'] as String?,
         imageAnalyses: (json['image_analyses'] as List<dynamic>?)
@@ -247,10 +262,13 @@ class ArticleAnalysis {
 
   Map<String, dynamic> toJson() => {
         'summary': summary,
+        'tldr': tldr,
         'key_points': keyPoints,
+        'detailed_points': detailedPoints,
         'topics': topics,
         'sentiment': sentiment,
         'reading_time_minutes': readingTimeMinutes,
+        'content_type': contentType,
         'relevance_score': relevanceScore,
         'comments_summary': commentsSummary,
         'image_analyses': imageAnalyses.map((e) => e.toJson()).toList(),
@@ -379,4 +397,73 @@ class DigestArticle {
         'highlights': highlights,
         'url': url,
       };
+}
+
+/// User preferences and settings
+class UserSettings {
+  final String id;
+  final String userId;
+  final TimeOfDay digestTime;
+  final String timezone;
+  final bool analyzeImages;
+  final bool includeComments;
+  final bool pushNotifications;
+  final String? fcmToken;
+
+  UserSettings({
+    required this.id,
+    required this.userId,
+    this.digestTime = const TimeOfDay(hour: 8, minute: 0),
+    this.timezone = 'America/Los_Angeles',
+    this.analyzeImages = true,
+    this.includeComments = true,
+    this.pushNotifications = true,
+    this.fcmToken,
+  });
+
+  factory UserSettings.fromJson(Map<String, dynamic> json) {
+    final timeStr = json['digest_time'] as String? ?? '08:00:00';
+    final parts = timeStr.split(':');
+    return UserSettings(
+      id: json['id'] as String,
+      userId: json['user_id'] as String,
+      digestTime: TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1])),
+      timezone: json['timezone'] as String? ?? 'America/Los_Angeles',
+      analyzeImages: json['analyze_images'] as bool? ?? true,
+      includeComments: json['include_comments'] as bool? ?? true,
+      pushNotifications: json['push_notifications'] as bool? ?? true,
+      fcmToken: json['fcm_token'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'user_id': userId,
+    'digest_time': '${digestTime.hour.toString().padLeft(2, '0')}:${digestTime.minute.toString().padLeft(2, '0')}:00',
+    'timezone': timezone,
+    'analyze_images': analyzeImages,
+    'include_comments': includeComments,
+    'push_notifications': pushNotifications,
+    'fcm_token': fcmToken,
+  };
+
+  UserSettings copyWith({
+    String? id,
+    String? userId,
+    TimeOfDay? digestTime,
+    String? timezone,
+    bool? analyzeImages,
+    bool? includeComments,
+    bool? pushNotifications,
+    String? fcmToken,
+  }) => UserSettings(
+    id: id ?? this.id,
+    userId: userId ?? this.userId,
+    digestTime: digestTime ?? this.digestTime,
+    timezone: timezone ?? this.timezone,
+    analyzeImages: analyzeImages ?? this.analyzeImages,
+    includeComments: includeComments ?? this.includeComments,
+    pushNotifications: pushNotifications ?? this.pushNotifications,
+    fcmToken: fcmToken ?? this.fcmToken,
+  );
 }
