@@ -11,7 +11,7 @@ class Env {
   // Claude API (stored in Supabase Edge Function secrets, not here)
   // Set via: supabase secrets set ANTHROPIC_API_KEY=your_key
 
-  // Legal URLs
-  static const String privacyPolicyUrl = 'https://yourapp.com/privacy';
-  static const String termsOfServiceUrl = 'https://yourapp.com/terms';
+  // Legal URLs (hosted on GitHub Pages)
+  static const String privacyPolicyUrl = 'https://bluzername.github.io/ReadZero/privacy-policy';
+  static const String termsOfServiceUrl = 'https://bluzername.github.io/ReadZero/terms-of-service';
 }
